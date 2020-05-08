@@ -135,8 +135,8 @@ template getRootHiHv() {
 }
 
 template proveCredentialOwnership() {
-	var idOwnershipLevels = 16;
-	var issuerLevels = 16;
+	var idOwnershipLevels = 16 + 1;
+	var issuerLevels = 16 + 1;
 
 	// A
 	signal input claim[8];
@@ -145,23 +145,23 @@ template proveCredentialOwnership() {
 	signal input hoKOpSk;
 	signal input hoClaimKOpMtp[idOwnershipLevels];
 	signal input hoClaimKOpClaimsTreeRoot;
-	signal input hoClaimKOpRevTreeRoot;
-	signal input hoClaimKOpRootsTreeRoot;
+	// signal input hoClaimKOpRevTreeRoot;
+	// signal input hoClaimKOpRootsTreeRoot;
 
 	// C. issuer proof of claim existence
-	signal input isProofExistMtp[idOwnershipLevels];
+	signal input isProofExistMtp[issuerLevels];
 	signal input isProofExistClaimsTreeRoot;
 	// signal input isProofExistRevTreeRoot;
 	// signal input isProofExistRootsTreeRoot;
 
 	// D. issuer proof of claim validity
-	signal input isProofValidMtp[idOwnershipLevels];
+	signal input isProofValidMtp[issuerLevels];
 	signal input isProofValidClaimsTreeRoot;
 	signal input isProofValidRevTreeRoot;
 	signal input isProofValidRootsTreeRoot;
 
 	// E. issuer proof of Root (ExistClaimsTreeRoot)
-	signal input isProofRootMtp[idOwnershipLevels];
+	signal input isProofRootMtp[issuerLevels];
 
 	// F. issuer recent idenState
 	signal input isIdenState;
@@ -191,13 +191,13 @@ template proveCredentialOwnership() {
 	//
 	// B. Prove ownership of the kOpSk associated with the holder identity
 	//
-	component idOwnership = IdOwnership(idOwnershipLevels);
+	component idOwnership = IdOwnershipGenesis(idOwnershipLevels);
 	idOwnership.id <== subjectOtherIden.id;
 	idOwnership.userPrivateKey <== hoKOpSk;
 	for (var i=0; i<idOwnershipLevels; i++) { idOwnership.siblings[i] <== hoClaimKOpMtp[i]; }
 	idOwnership.claimsTreeRoot <== hoClaimKOpClaimsTreeRoot;
-	idOwnership.revTreeRoot    <== hoClaimKOpRevTreeRoot;
-	idOwnership.rootsTreeRoot  <== hoClaimKOpRootsTreeRoot;
+	// idOwnership.revTreeRoot    <== hoClaimKOpRevTreeRoot;
+	// idOwnership.rootsTreeRoot  <== hoClaimKOpRootsTreeRoot;
 
 	//
 	// C. Claim proof of existence (isProofExist)

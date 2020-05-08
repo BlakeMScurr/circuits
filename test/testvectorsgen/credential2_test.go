@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io/ioutil"
+	"math/big"
 	"os"
 	"path"
 	"testing"
@@ -36,6 +37,39 @@ var idenPubOnChain *idenpubonchainlocal.IdenPubOnChain
 var idenStateZkProofConf *issuer.IdenStateZkProofConf
 
 var pass = []byte("my passphrase")
+
+const idOwnershipLevels = 16
+const issuerLevels = 16
+
+type Inputs struct {
+	// A
+	Claim [8]*big.Int `json:"claim"`
+
+	// B. holder proof of claimKOp in the genesis
+	HoKOpSk                  *big.Int   `json:"hoKOpSk"`
+	HoClaimKOpMtp            []*big.Int `json:"hoClaimKOpMtp"`
+	HoClaimKOpClaimsTreeRoot *big.Int   `json:"hoClaimKOpClaimsTreeRoot"`
+	// HoClaimKOpRevTreeRoot    *big.Int   `json:"hoClaimKOpRevTreeRoot"`
+	// HoClaimKOpRootsTreeRoot  *big.Int   `json:"hoClaimKOpRootsTreeRoot"`
+
+	// C. issuer proof of claim existence
+	IsProofExistMtp            []*big.Int `json:"isProofExistMtp"`
+	IsProofExistClaimsTreeRoot *big.Int   `json:"isProofExistClaimsTreeRoot"`
+	// signal input isProofExistRevTreeRoot;
+	// signal input isProofExistRootsTreeRoot;
+
+	// D. issuer proof of claim validity
+	IsProofValidMtp            []*big.Int `json:"isProofValidMtp"`
+	IsProofValidClaimsTreeRoot *big.Int   `json:"isProofValidClaimsTreeRoot"`
+	IsProofValidRevTreeRoot    *big.Int   `json:"isProofValidRevTreeRoot"`
+	IsProofValidRootsTreeRoot  *big.Int   `json:"isProofValidRootsTreeRoot"`
+
+	// E. issuer proof of Root (ExistClaimsTreeRoot)
+	IsProofRootMtp []*big.Int `json:"isProofRootMtp"`
+
+	// F. issuer recent idenState
+	IsIdenState *big.Int `json:"isIdenState"`
+}
 
 // func Copy(dst interface{}, src interface{}) {
 // 	srcJSON, err := json.Marshal(src)
@@ -175,13 +209,37 @@ func TestVerifyCredentialValidity(t *testing.T) {
 
 	// HOLDER + VERIFIER
 
-	credValidClaim1t2, err := ho.HolderGetCredentialValidity(credExistClaim1)
+	credValid, err := ho.HolderGetCredentialValidity(credExistClaim1)
 	assert.Nil(t, err)
-	assert.NotNil(t, credValidClaim1t2)
+	assert.NotNil(t, credValid)
 
-	credValidClaim1t2JSON, err := json.MarshalIndent(credValidClaim1t2, "", "  ")
+	// credValidJSON, err := json.MarshalIndent(credValid, "", "  ")
+	// assert.Nil(t, err)
+	// fmt.Printf("%v\n", string(credValidJSON))
+
+	var inputs Inputs
+
+	idOwnershipInputs, err := is.GenIdOwnershipGenesisInputs()
+	require.Nil(t, err)
+
+	inputs.HoKOpSk = idOwnershipInputs.PrivateKey
+	inputs.HoClaimKOpMtp = idOwnershipInputs.MtpSiblings
+	inputs.HoClaimKOpClaimsTreeRoot = idOwnershipInputs.ClaimsTreeRoot
+
+	for i, elem := range credValid.CredentialExistence.Claim.Data {
+		inputs.Claim[i] = elem.BigInt()
+	}
+	inputs.IsProofValidClaimsTreeRoot = credValid.ClaimsTreeRoot.BigInt()
+	inputs.IsProofValidRootsTreeRoot = credValid.RootsTreeRoot.BigInt()
+
+	inputs.IsProofValidMtp = credValid.CredentialExistence.MtpClaim.AllSiblingsCircom(issuerLevels)
+	inputs.IsProofExistMtp = credValid.MtpNotNonce.AllSiblingsCircom(issuerLevels)
+
+	inputs.IsIdenState = credValid.IdenStateData.IdenState.BigInt()
+
+	inputsJSON, err := json.MarshalIndent(inputs, "", "  ")
 	assert.Nil(t, err)
-	fmt.Printf("%v\n", string(credValidClaim1t2JSON))
+	fmt.Printf("%v\n", string(inputsJSON))
 }
 
 var _vk *zktypes.Vk
