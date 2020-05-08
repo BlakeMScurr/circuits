@@ -1,52 +1,11 @@
-include "../node_modules/circomlib/circuits/babyjub.circom";
-include "../node_modules/circomlib/circuits/comparators.circom";
-include "../node_modules/circomlib/circuits/poseidon.circom";
+// include "../node_modules/circomlib/circuits/babyjub.circom";
+// include "../node_modules/circomlib/circuits/comparators.circom";
+// include "../node_modules/circomlib/circuits/poseidon.circom";
 include "../node_modules/circomlib/circuits/bitify.circom";
-include "./utils.circom";
-
-// For now SubjectPos is set to Index
-// template BuildClaimSubjectOtherIden() {
-// 	signal input claimType
-// 	signal input id;
-// 
-// 	signal output hi;
-// 	signal output hv;
-// 
-// 	component e0 = Bits2Num(256);
-// 	var claimType[64];
-// 	claimType = bigEndian(_claimType, 64);
-// 	for (var i=0; i<64; i++) {
-// 		e0.in[i] <== claimType[i];
-// 	}
-// 	for (var i=64; i<256; i++) {
-// 		e0.in[i] <== 0;
-// 	}
-// 
-// 	// Hi
-// 	component hashHi = Poseidon(2, 6, 8, 57);
-// 	hashHi.inputs[0] <== e0.out;
-// 	hashHi.inputs[1] <== id;
-// 	hi <== hashHi.out;
-// 
-// 	// Hv
-// 	component hashHv = Poseidon(1, 6, 8, 57);
-// 	hashHv.inputs[0] <== 0;
-// 	hv <== hashHv.out;
-// }
-
-// template Test() {
-// 	signal input claim[2][4];
-// }
-// 
-// template getClaimNonce() {
-// 	signal input claim[2][4];
-// 	signal output nonce;
-// }
-// 
-// template getClaimType() {
-// 	signal input claim[2][4];
-// 	signal output claimType;
-// }
+include "../node_modules/circomlib/circuits/smt/smtverifier.circom";
+// include "../node_modules/circomlib/circuits/smt/smtprocessor.circom";
+// include "./utils.circom";
+include "./idOwnership.circom";
 
 // index: bool.  0 if SubjectPos is Index, 1 if SubjectPos is Value
 template getClaimSubjectOtherIden(index) {
@@ -128,28 +87,183 @@ template getClaimHiHv() {
 	hv <== hashHv.out;
 }
 
-template test() {
+template getIdenState() {
+	signal input claimsTreeRoot;
+	signal input revTreeRoot;
+	signal input rootsTreeRoot;
+
+	signal output idenState;
+
+	component calcIdState = Poseidon(6, 6, 8, 57);
+	calcIdState.inputs[0] <== claimsTreeRoot;
+	calcIdState.inputs[1] <== revTreeRoot;
+	calcIdState.inputs[2] <== rootsTreeRoot;
+	for (var i=3; i<6; i++) { calcIdState.inputs[i] <== 0; }
+
+	idenState <== calcIdState.out;
+}
+
+template getRevNonceNoVerHiHv() {
+	signal input revNonce;
+	// signal input version;
+
+	signal output hi;
+	signal output hv;
+
+	component hashHi = Poseidon(6, 6, 8, 57);
+	hashHi.inputs[0] <== revNonce;
+	for (var i=1; i<6; i++) { hashHi.inputs[i] <== 0; }
+	hi <== hashHi.out;
+
+	// hv = Poseidon([0xffff_ffff, 0, 0, 0, 0)
+	hv <== 17142353815121200339963760108352696118925531835836661574604762966243856573359;
+}
+
+template getRootHiHv() {
+	signal input root;
+
+	signal output hi;
+	signal output hv;
+
+	component hashHi = Poseidon(6, 6, 8, 57);
+	hashHi.inputs[0] <== root;
+	for (var i=1; i<6; i++) { hashHi.inputs[i] <== 0; }
+	hi <== hashHi.out;
+
+	// hv = Poseidon([0, 0, 0, 0, 0)
+	hv <== 951383894958571821976060584138905353883650994872035011055912076785884444545;
+}
+
+template proveCredentialOwnership() {
+	var idOwnershipLevels = 16;
+	var issuerLevels = 16;
+
+	// A
 	signal input claim[8];
 
+	// B. holder proof of claimKOp in the genesis
+	signal input hoKOpSk;
+	signal input hoClaimKOpMtp[idOwnershipLevels];
+	signal input hoClaimKOpClaimsTreeRoot;
+	signal input hoClaimKOpRevTreeRoot;
+	signal input hoClaimKOpRootsTreeRoot;
+
+	// C. issuer proof of claim existence
+	signal input isProofExistMtp[idOwnershipLevels];
+	signal input isProofExistClaimsTreeRoot;
+	// signal input isProofExistRevTreeRoot;
+	// signal input isProofExistRootsTreeRoot;
+
+	// D. issuer proof of claim validity
+	signal input isProofValidMtp[idOwnershipLevels];
+	signal input isProofValidClaimsTreeRoot;
+	signal input isProofValidRevTreeRoot;
+	signal input isProofValidRootsTreeRoot;
+
+	// E. issuer proof of Root (ExistClaimsTreeRoot)
+	signal input isProofRootMtp[idOwnershipLevels];
+
+	// F. issuer recent idenState
+	signal input isIdenState;
+
+	//
+	// A. Prove that the claim has subject OtherIden, and take the subject identity.
+	//
 	component header = getClaimHeader();
 	for (var i=0; i<8; i++) { header.claim[i] <== claim[i]; }
-	// header.claimType
-	// header.claimFlags[32]
+	// out: header.claimType
+	// out: header.claimFlags[32]
 
 	component subjectOtherIden = getClaimSubjectOtherIden(0);
 	for (var i=0; i<8; i++) { subjectOtherIden.claim[i] <== claim[i]; }
 	for (var i=0; i<32; i++) { subjectOtherIden.claimFlags[i] <== header.claimFlags[i]; }
-	// subjectOtherIden.id
+	// out: subjectOtherIden.id
 
 	component claimRevNonce = getClaimRevNonce();
 	for (var i=0; i<8; i++) { claimRevNonce.claim[i] <== claim[i]; }
-	// claimRevNonce.revNonce
+	// out: claimRevNonce.revNonce
 
 	component claimHiHv = getClaimHiHv();
 	for (var i=0; i<8; i++) { claimHiHv.claim[i] <== claim[i]; }
-	// claimHiHv.hi
-	// claimHiHv.hv
+	// out: claimHiHv.hi
+	// out: claimHiHv.hv
+
+	//
+	// B. Prove ownership of the kOpSk associated with the holder identity
+	//
+	component idOwnership = IdOwnership(idOwnershipLevels);
+	idOwnership.id <== subjectOtherIden.id;
+	idOwnership.userPrivateKey <== hoKOpSk;
+	for (var i=0; i<idOwnershipLevels; i++) { idOwnership.siblings[i] <== hoClaimKOpMtp[i]; }
+	idOwnership.claimsTreeRoot <== hoClaimKOpClaimsTreeRoot;
+	idOwnership.revTreeRoot    <== hoClaimKOpRevTreeRoot;
+	idOwnership.rootsTreeRoot  <== hoClaimKOpRootsTreeRoot;
+
+	//
+	// C. Claim proof of existence (isProofExist)
+	//
+	component smtClaimExists = SMTVerifier(issuerLevels);
+	smtClaimExists.enabled <== 1;
+	smtClaimExists.fnc <== 0; // Inclusion
+	smtClaimExists.root <== isProofExistClaimsTreeRoot;
+	for (var i=0; i<issuerLevels; i++) { smtClaimExists.siblings[i] <== isProofExistMtp[i]; }
+	smtClaimExists.oldKey <== 0;
+	smtClaimExists.oldValue <== 0;
+	smtClaimExists.isOld0 <== 0;
+	smtClaimExists.key <== claimHiHv.hi;
+	smtClaimExists.value <== claimHiHv.hv;
+
+	// component isProofExistIdenState = getIdenState();
+	// isProofExistIdenState.claimsTreeRoot <== isProofExistClaimsTreeRoot;
+	// isProofExistIdenState.revTreeRoot <== isProofExistRevTreeRoot;
+	// isProofExistIdenState.rootsTreeRoot <== isProofExistRootsTreeRoot;
+	// out: isProofExistIdenState.idenState
+
+	//
+	// D. Claim proof of non revocation (validity)
+	//
+	component revNonceHiHv = getRevNonceNoVerHiHv();
+	revNonceHiHv.revNonce <== claimRevNonce.revNonce;
+
+	component smtClaimValid = SMTVerifier(issuerLevels);
+	smtClaimValid.enabled <== 1;
+	smtClaimValid.fnc <== 1; // Non-inclusion
+	smtClaimValid.root <== isProofValidClaimsTreeRoot;
+	for (var i=0; i<issuerLevels; i++) { smtClaimValid.siblings[i] <== isProofValidMtp[i]; }
+	smtClaimValid.oldKey <== 0;
+	smtClaimValid.oldValue <== 0;
+	smtClaimValid.isOld0 <== 0;
+	smtClaimValid.key <== revNonceHiHv.hi;
+	smtClaimValid.value <== revNonceHiHv.hv;
+
+	//
+	// E. Claim proof of root
+	//
+	component rootHiHv = getRootHiHv();
+	rootHiHv.root <== isProofExistClaimsTreeRoot;
+
+	component smtRootValid = SMTVerifier(issuerLevels);
+	smtRootValid.enabled <== 1;
+	smtRootValid.fnc <== 0; // Inclusion
+	smtRootValid.root <== isProofValidRootsTreeRoot;
+	for (var i=0; i<issuerLevels; i++) { smtRootValid.siblings[i] <== isProofRootMtp[i]; }
+	smtRootValid.oldKey <== 0;
+	smtRootValid.oldValue <== 0;
+	smtRootValid.isOld0 <== 0;
+	smtRootValid.key <== rootHiHv.hi;
+	smtRootValid.value <== rootHiHv.hv;
+
+	//
+	// F. Verify ValidIdenState == isIdenState
+	//
+	component isProofValidIdenState = getIdenState();
+	isProofValidIdenState.claimsTreeRoot <== isProofValidClaimsTreeRoot;
+	isProofValidIdenState.revTreeRoot <== isProofValidRevTreeRoot;
+	isProofValidIdenState.rootsTreeRoot <== isProofValidRootsTreeRoot;
+	// out: isProofValidIdenState.idenState
+
+	isProofValidIdenState.idenState === isIdenState;
 }
 
 // component main = getClaimSubjectOtherIden(0);
-component main = test();
+component main = proveCredentialOwnership();
