@@ -1,293 +1,361 @@
 package main
 
-// import (
-// 	"encoding/hex"
-// 	"encoding/json"
-// 	"fmt"
-// 	"math/big"
-// 	"strconv"
-// 	"testing"
+import (
+	"encoding/json"
+	"fmt"
+	"io/ioutil"
+	"math/big"
+	"os"
+	"path"
+	"testing"
+	"time"
+
+	"github.com/iden3/go-circom-prover-verifier/parsers"
+	zktypes "github.com/iden3/go-circom-prover-verifier/types"
+	"github.com/iden3/go-iden3-core/components/idenpuboffchain"
+	idenpuboffchanlocal "github.com/iden3/go-iden3-core/components/idenpuboffchain/local"
+	"github.com/iden3/go-iden3-core/components/idenpubonchain"
+	idenpubonchainlocal "github.com/iden3/go-iden3-core/components/idenpubonchain/local"
+	"github.com/iden3/go-iden3-core/core/claims"
+	"github.com/iden3/go-iden3-core/db"
+	"github.com/iden3/go-iden3-core/identity/holder"
+	"github.com/iden3/go-iden3-core/identity/issuer"
+	"github.com/iden3/go-iden3-core/keystore"
+	"github.com/iden3/go-iden3-core/merkletree"
+	"github.com/iden3/go-iden3-crypto/babyjub"
+	"github.com/mitchellh/mapstructure"
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
+
+	log "github.com/sirupsen/logrus"
+)
+
+var blockN uint64
+var blockTs int64
+
+var idenPubOffChain *idenpuboffchanlocal.IdenPubOffChain
+var idenPubOnChain *idenpubonchainlocal.IdenPubOnChain
+var idenStateZkProofConf *issuer.IdenStateZkProofConf
+
+var pass = []byte("my passphrase")
+
+const idOwnershipLevels = 4
+const issuerLevels = 6
+
+// type Inputs struct {
+// 	// A
+// 	Claim [8]*big.Int `json:"claim"`
 //
-// 	common3 "github.com/iden3/go-iden3-core/common"
-// 	"github.com/iden3/go-iden3-core/core/claims"
-// 	"github.com/iden3/go-iden3-core/core/genesis"
-// 	"github.com/iden3/go-iden3-core/db"
-// 	"github.com/iden3/go-iden3-core/merkletree"
-// 	"github.com/iden3/go-iden3-crypto/babyjub"
-// 	"github.com/stretchr/testify/assert"
-// )
+// 	// B. holder proof of claimKOp in the genesis
+// 	HoKOpSk                  *big.Int   `json:"hoKOpSk"`
+// 	HoClaimKOpMtp            []*big.Int `json:"hoClaimKOpMtp"`
+// 	HoClaimKOpClaimsTreeRoot *big.Int   `json:"hoClaimKOpClaimsTreeRoot"`
+// 	// HoClaimKOpRevTreeRoot    *big.Int   `json:"hoClaimKOpRevTreeRoot"`
+// 	// HoClaimKOpRootsTreeRoot  *big.Int   `json:"hoClaimKOpRootsTreeRoot"`
 //
-// func TestCredentialOnly1ClaimInTree(t *testing.T) {
-// 	fmt.Println("\n-------\nCredential (simple tree) test vectors:")
+// 	// C. issuer proof of claim existence
+// 	IsProofExistMtp            []*big.Int `json:"isProofExistMtp"`
+// 	IsProofExistClaimsTreeRoot *big.Int   `json:"isProofExistClaimsTreeRoot"`
+// 	// signal input isProofExistRevTreeRoot;
+// 	// signal input isProofExistRootsTreeRoot;
 //
-// 	nLevels := 3
+// 	// D. issuer proof of claim validity
+// 	IsProofValidMtp            []*big.Int `json:"isProofValidMtp"`
+// 	IsProofValidClaimsTreeRoot *big.Int   `json:"isProofValidClaimsTreeRoot"`
+// 	IsProofValidRevTreeRoot    *big.Int   `json:"isProofValidRevTreeRoot"`
+// 	IsProofValidRootsTreeRoot  *big.Int   `json:"isProofValidRootsTreeRoot"`
 //
-// 	privKHex := "28156abe7fe2fd433dc9df969286b96666489bac508612d0e16593e944c4f69f"
-// 	// Create new claim
-// 	var k babyjub.PrivateKey
-// 	if _, err := hex.Decode(k[:], []byte(privKHex)); err != nil {
+// 	// E. issuer proof of Root (ExistClaimsTreeRoot)
+// 	IsProofRootMtp []*big.Int `json:"isProofRootMtp"`
+//
+// 	// F. issuer recent idenState
+// 	IsIdenState *big.Int `json:"isIdenState"`
+// }
+
+// func Copy(dst interface{}, src interface{}) {
+// 	srcJSON, err := json.Marshal(src)
+// 	if err != nil {
 // 		panic(err)
 // 	}
-// 	fmt.Println("sk", skToBigInt(&k))
-// 	fmt.Println("sk", new(big.Int).SetBytes(k[:]))
-// 	fmt.Println("sk", new(big.Int).SetBytes(common3.SwapEndianness(k[:])))
-// 	pk := k.Public()
-// 	fmt.Println("sign", babyjub.PointCoordSign(pk.X))
-// 	fmt.Println("y", pk.Y)
-//
-// 	claimKOp := claims.NewClaimKeyBabyJub(pk, 1)
-//
-// 	clt, err := merkletree.NewMerkleTree(db.NewMemoryStorage(), nLevels)
-// 	assert.Nil(t, err)
-// 	rot, err := merkletree.NewMerkleTree(db.NewMemoryStorage(), nLevels)
-// 	assert.Nil(t, err)
-//
-// 	id, err := genesis.CalculateIdGenesisMT(clt, rot, claimKOp, []merkletree.Entrier{})
-// 	assert.Nil(t, err)
-// 	fmt.Println("id", new(big.Int).SetBytes(id.Bytes()))
-// 	fmt.Println("id", new(big.Int).SetBytes(common3.SwapEndianness(id.Bytes())))
-//
-// 	// get claimproof
-// 	hi, err := claimKOp.Entry().HIndex()
-// 	assert.Nil(t, err)
-// 	fmt.Println("claim hi", new(big.Int).SetBytes(common3.SwapEndianness(hi[:])))
-// 	fmt.Println("claim hi", merkletree.ElemBytesToBigInt(*(*merkletree.ElemBytes)(hi)))
-// 	oProof, err := clt.GenerateProof(hi, nil)
-// 	assert.Nil(t, err)
-// 	fmt.Println(oProof)
-// 	fmt.Println(oProof.Bytes())
-// 	fmt.Println(oProof.Siblings)
-// 	fmt.Println("len siblings", len(oProof.Siblings))
-// 	for _, s := range oProof.Siblings {
-// 		fmt.Println("s", s)
-// 	}
-// 	fmt.Println("oClaimsTreeRoot", new(big.Int).SetBytes(common3.SwapEndianness(clt.RootKey().Bytes())))
-// 	fmt.Println("oClaimsTreeRoot", merkletree.ElemBytesToBigInt(*(*merkletree.ElemBytes)(clt.RootKey()))) // internally SwapsEndianness of the bytes
-// 	fmt.Println("oRootsTreeRoot", merkletree.ElemBytesToBigInt(*(*merkletree.ElemBytes)(rot.RootKey())))
-//
-// 	// create Issuer tree
-// 	issuerTree, err := merkletree.NewMerkleTree(db.NewMemoryStorage(), 3)
-// 	assert.Nil(t, err)
-// 	// build ClaimBasic about Id
-// 	var indexSlot [claims.IndexSlotLen]byte
-// 	var valueSlot [claims.ValueSlotLen]byte
-// 	// copy(indexSlot[(152/8):], common3.SwapEndianness(id.Bytes()))
-// 	copy(indexSlot[(152/8):], id.Bytes())
-// 	claimAboutId := claims.NewClaimBasic(indexSlot, valueSlot)
-// 	hiClaimAboutId, _ := claimAboutId.Entry().HIndex()
-// 	fmt.Println("ClaimAboutId hi", new(big.Int).SetBytes(common3.SwapEndianness(hiClaimAboutId[:])))
-// 	// hvClaimAboutId, _ := claimAboutId.Entry().HValue()
-// 	// add ClaimAboutId to issuerTree
-// 	err = issuerTree.AddClaim(claimAboutId)
-// 	assert.Nil(t, err)
-// 	// proof, err := clt.GenerateProof(hiClaimAboutId, nil)
-// 	// assert.Nil(t, err)
-//
-// 	fmt.Println("--- copy & paste into credential.test.js ---")
-// 	fmt.Printf(`issuerRoot: "%s",`+"\n", new(big.Int).SetBytes(common3.SwapEndianness(issuerTree.RootKey().Bytes())))
-// 	fmt.Printf(`siblings: ["0", "0", "0", "0"],` + "\n") // TMP
-// 	fmt.Printf(`id: "%s",`+"\n", new(big.Int).SetBytes(common3.SwapEndianness(id.Bytes())))
-// 	fmt.Printf(`// id: "%s",`+"\n", new(big.Int).SetBytes(id.Bytes()))
-//
-// 	fmt.Printf(`oUserPrivateKey: "%s",`+"\n", skToBigInt(&k))
-// 	fmt.Printf(`oSiblings: ["0", "0", "0", "0"],` + "\n") // TMP
-// 	fmt.Printf(`oClaimsTreeRoot: "%s",`+"\n", new(big.Int).SetBytes(common3.SwapEndianness(clt.RootKey().Bytes())))
-// 	fmt.Printf(`// oRevTreeRoot: "0",` + "\n") // TMP
-// 	fmt.Printf(`// oRootsTreeRoot: "%s"`+"\n", new(big.Int).SetBytes(common3.SwapEndianness(rot.RootKey().Bytes())))
-// 	fmt.Println("--- end of copy & paste to credential.test.js ---")
-//
-// 	fmt.Println("\nEnd of Credential (simple tree) test vectors\n-----")
-// }
-//
-// func TestCredentialMultipleClaimsInTree1(t *testing.T) {
-// 	fmt.Println("\n-------\nCredential multiple claims in tree test vectors 1:")
-//
-// 	nLevels := 3
-// 	issuerNumLevels := 10
-//
-// 	privKHex := "28156abe7fe2fd433dc9df969286b96666489bac508612d0e16593e944c4f69f"
-// 	// Create new claim
-// 	var k babyjub.PrivateKey
-// 	if _, err := hex.Decode(k[:], []byte(privKHex)); err != nil {
+// 	if err := json.Unmarshal(srcJSON, dst); err != nil {
 // 		panic(err)
 // 	}
-// 	pk := k.Public()
-//
-// 	claimKOp := claims.NewClaimKeyBabyJub(pk, 1)
-//
-// 	clt, err := merkletree.NewMerkleTree(db.NewMemoryStorage(), nLevels)
-// 	assert.Nil(t, err)
-// 	rot, err := merkletree.NewMerkleTree(db.NewMemoryStorage(), nLevels)
-// 	assert.Nil(t, err)
-//
-// 	id, err := genesis.CalculateIdGenesisMT(clt, rot, claimKOp, []merkletree.Entrier{})
-// 	assert.Nil(t, err)
-//
-// 	// create Issuer tree
-// 	issuerTree, err := merkletree.NewMerkleTree(db.NewMemoryStorage(), issuerNumLevels)
-// 	assert.Nil(t, err)
-// 	// build ClaimBasic about Id
-// 	var indexSlot [claims.IndexSlotLen]byte
-// 	var valueSlot [claims.ValueSlotLen]byte
-// 	// copy(indexSlot[(152/8):], common3.SwapEndianness(id.Bytes()))
-// 	copy(indexSlot[(152/8):], id.Bytes())
-// 	claimAboutId := claims.NewClaimBasic(indexSlot, valueSlot)
-// 	hiClaimAboutId, _ := claimAboutId.Entry().HIndex()
-// 	// fmt.Println("ClaimAboutId hi", new(big.Int).SetBytes(common3.SwapEndianness(hiClaimAboutId[:])))
-// 	// hvClaimAboutId, _ := claimAboutId.Entry().HValue()
-//
-// 	// add ClaimAboutId to issuerTree
-// 	err = issuerTree.AddClaim(claimAboutId)
-// 	assert.Nil(t, err)
-//
-// 	// add padding claims
-// 	fmt.Println(issuerTree.RootKey())
-// 	issuerTree, err = addExtraClaims(issuerTree, 2)
-// 	assert.Nil(t, err)
-// 	fmt.Println(issuerTree.RootKey())
-//
-// 	// generate merkle proof
-// 	proof, err := issuerTree.GenerateProof(hiClaimAboutId, nil)
-// 	assert.Nil(t, err)
-// 	// fmt.Println(proof)
-// 	// fmt.Println(proof.Siblings)
-// 	// fmt.Println("len siblings", len(proof.Siblings))
-// 	// siblings := merkletree.SiblingsFromProof(proof, issuerTree.MaxLevels())
-// 	siblings := merkletree.SiblingsFromProof(proof)
-// 	for i := len(siblings); i < issuerTree.MaxLevels(); i++ { // add the rest of empty levels to the siblings
-// 		siblings = append(siblings, &merkletree.HashZero)
-// 	}
-// 	siblings = append(siblings, &merkletree.HashZero) // add extra level for circom compatibility
-// 	// fmt.Println("s", siblings)
-// 	var siblingsStr []string
-// 	for i := 0; i < len(siblings); i++ {
-// 		siblingsStr = append(siblingsStr, new(big.Int).SetBytes(common3.SwapEndianness(siblings[i].Bytes())).String())
-// 	}
-// 	jsonSiblings, err := json.Marshal(siblingsStr)
-// 	assert.Nil(t, err)
-//
-// 	// fmt.Println("ROOT", issuerTree.RootKey(), new(big.Int).SetBytes(common3.SwapEndianness(issuerTree.RootKey().Bytes())))
-// 	hvClaimAboutId, _ := claimAboutId.Entry().HValue()
-// 	// leafKey, err := merkletree.LeafKey(hiClaimAboutId, hvClaimAboutId)
-// 	// assert.Nil(t, err)
-// 	// fmt.Println("LEAFKEY", leafKey, new(big.Int).SetBytes(common3.SwapEndianness(leafKey.Bytes())))
-//
-// 	assert.True(t, merkletree.VerifyProof(issuerTree.RootKey(), proof, hiClaimAboutId, hvClaimAboutId))
-//
-// 	fmt.Println("--- copy & paste into credential.test.js / multiple-claims-in-tree ---")
-// 	fmt.Printf(`issuerRoot: "%s",`+"\n", new(big.Int).SetBytes(common3.SwapEndianness(issuerTree.RootKey().Bytes())))
-// 	fmt.Printf(`siblings: %s,`+"\n", jsonSiblings)
-// 	fmt.Printf(`id: "%s",`+"\n", new(big.Int).SetBytes(common3.SwapEndianness(id.Bytes())))
-// 	fmt.Printf(`oUserPrivateKey: "%s",`+"\n", skToBigInt(&k))
-// 	fmt.Printf(`oSiblings: ["0", "0", "0", "0"],` + "\n") // TMP
-// 	fmt.Printf(`oClaimsTreeRoot: "%s",`+"\n", new(big.Int).SetBytes(common3.SwapEndianness(clt.RootKey().Bytes())))
-// 	fmt.Printf(`// oRevTreeRoot: "0",` + "\n") // TMP
-// 	fmt.Printf(`// oRootsTreeRoot: "%s"`+"\n", new(big.Int).SetBytes(common3.SwapEndianness(rot.RootKey().Bytes())))
-// 	fmt.Println("--- end of copy & paste to credential.test.js / multiple-claims-in-tree ---")
-//
-// 	fmt.Println("\nEnd of Credential multiple claims in tree test vectors 1 \n-----")
-//
-// 	// err = issuerTree.PrintGraphViz(nil)
-// 	// assert.Nil(t, err)
 // }
-//
-// func TestCredentialMultipleClaimsInTree2(t *testing.T) {
-// 	fmt.Println("\n-------\nCredential multiple claims in tree test vectors 2:")
-//
-// 	nLevels := 3
-// 	issuerNumLevels := 10
-//
-// 	privKHex := "28156abe7fe2fd433dc9df969286b96666489bac508612d0e16593e944c4f69f"
-// 	// Create new claim
-// 	var k babyjub.PrivateKey
-// 	if _, err := hex.Decode(k[:], []byte(privKHex)); err != nil {
-// 		panic(err)
-// 	}
-// 	pk := k.Public()
-//
-// 	claimKOp := claims.NewClaimKeyBabyJub(pk, 1)
-//
-// 	clt, err := merkletree.NewMerkleTree(db.NewMemoryStorage(), nLevels)
-// 	assert.Nil(t, err)
-// 	rot, err := merkletree.NewMerkleTree(db.NewMemoryStorage(), nLevels)
-// 	assert.Nil(t, err)
-//
-// 	id, err := genesis.CalculateIdGenesisMT(clt, rot, claimKOp, []merkletree.Entrier{})
-// 	assert.Nil(t, err)
-//
-// 	// create Issuer tree
-// 	issuerTree, err := merkletree.NewMerkleTree(db.NewMemoryStorage(), issuerNumLevels)
-// 	assert.Nil(t, err)
-// 	// build ClaimBasic about Id
-// 	var indexSlot [claims.IndexSlotLen]byte
-// 	var valueSlot [claims.ValueSlotLen]byte
-// 	copy(indexSlot[(152/8):], id.Bytes())
-// 	claimAboutId := claims.NewClaimBasic(indexSlot, valueSlot)
-// 	hiClaimAboutId, _ := claimAboutId.Entry().HIndex()
-//
-// 	// add ClaimAboutId to issuerTree
-// 	err = issuerTree.AddClaim(claimAboutId)
-// 	assert.Nil(t, err)
-//
-// 	// add padding claims
-// 	fmt.Println(issuerTree.RootKey())
-// 	issuerTree, err = addExtraClaims(issuerTree, 10)
-// 	assert.Nil(t, err)
-// 	fmt.Println(issuerTree.RootKey())
-//
-// 	// generate merkle proof
-// 	proof, err := issuerTree.GenerateProof(hiClaimAboutId, nil)
-// 	assert.Nil(t, err)
-// 	siblings := merkletree.SiblingsFromProof(proof)
-// 	for i := len(siblings); i < issuerTree.MaxLevels(); i++ { // add the rest of empty levels to the siblings
-// 		siblings = append(siblings, &merkletree.HashZero)
-// 	}
-// 	siblings = append(siblings, &merkletree.HashZero) // add extra level for circom compatibility
-// 	var siblingsStr []string
-// 	for i := 0; i < len(siblings); i++ {
-// 		siblingsStr = append(siblingsStr, new(big.Int).SetBytes(common3.SwapEndianness(siblings[i].Bytes())).String())
-// 	}
-// 	jsonSiblings, err := json.Marshal(siblingsStr)
-// 	assert.Nil(t, err)
-//
-// 	hvClaimAboutId, _ := claimAboutId.Entry().HValue()
-// 	assert.True(t, merkletree.VerifyProof(issuerTree.RootKey(), proof, hiClaimAboutId, hvClaimAboutId))
-//
-// 	fmt.Println("--- copy & paste into credential.test.js / multiple-claims-in-tree ---")
-// 	fmt.Printf(`issuerRoot: "%s",`+"\n", new(big.Int).SetBytes(common3.SwapEndianness(issuerTree.RootKey().Bytes())))
-// 	fmt.Printf(`siblings: %s,`+"\n", jsonSiblings)
-// 	fmt.Printf(`id: "%s",`+"\n", new(big.Int).SetBytes(common3.SwapEndianness(id.Bytes())))
-// 	fmt.Printf(`oUserPrivateKey: "%s",`+"\n", skToBigInt(&k))
-// 	fmt.Printf(`oSiblings: ["0", "0", "0", "0"],` + "\n") // TMP
-// 	fmt.Printf(`oClaimsTreeRoot: "%s",`+"\n", new(big.Int).SetBytes(common3.SwapEndianness(clt.RootKey().Bytes())))
-// 	fmt.Printf(`// oRevTreeRoot: "0",` + "\n") // TMP
-// 	fmt.Printf(`// oRootsTreeRoot: "%s"`+"\n", new(big.Int).SetBytes(common3.SwapEndianness(rot.RootKey().Bytes())))
-// 	fmt.Println("--- end of copy & paste to credential.test.js / multiple-claims-in-tree ---")
-//
-// 	fmt.Println("\nEnd of Credential multiple claims in tree test vectors 2 \n-----")
-// }
-//
-// func addExtraClaims(tree *merkletree.MerkleTree, n int) (*merkletree.MerkleTree, error) {
-// 	for i := 0; i < n; i++ {
-// 		indexData := []byte("padding-claim-" + strconv.Itoa(i))
-// 		valueData := []byte("padding-claim-" + strconv.Itoa(i))
-// 		var indexSlot [claims.IndexSlotLen]byte
-// 		var valueSlot [claims.ValueSlotLen]byte
-// 		copy(indexSlot[:], indexData[:])
-// 		copy(valueSlot[:], valueData[:])
-// 		c := claims.NewClaimBasic(indexSlot, valueSlot)
-// 		hi, err := c.Entry().HIndex()
-// 		if err != nil {
-// 			return tree, err
-// 		}
-// 		err = tree.AddClaim(c)
-// 		if err != nil {
-// 			return tree, err
-// 		}
-// 		_, err = tree.GenerateProof(hi, nil)
-// 		if err != nil {
-// 			return tree, err
-// 		}
-// 	}
-// 	return tree, nil
-// }
+
+func newIssuer(t *testing.T, idenPubOnChain idenpubonchain.IdenPubOnChainer,
+	idenPubOffChainWrite idenpuboffchain.IdenPubOffChainWriter) (*issuer.Issuer, db.Storage, *keystore.KeyStore) {
+	cfg := issuer.ConfigDefault
+	storage := db.NewMemoryStorage()
+	ksStorage := keystore.MemStorage([]byte{})
+	keyStore, err := keystore.NewKeyStore(&ksStorage, keystore.LightKeyStoreParams)
+	require.Nil(t, err)
+	// kOp, err := keyStore.NewKey(pass)
+	var sk babyjub.PrivateKey
+	sk[0] = 0x11
+	kOp, err := keyStore.ImportKey(sk, pass)
+	require.Nil(t, err)
+	err = keyStore.UnlockKey(kOp, pass)
+	require.Nil(t, err)
+	_, err = issuer.Create(cfg, kOp, []claims.Claimer{}, storage, keyStore)
+	require.Nil(t, err)
+	is, err := issuer.Load(storage, keyStore, idenPubOnChain, idenStateZkProofConf, idenPubOffChainWrite)
+	require.Nil(t, err)
+	return is, storage, keyStore
+}
+
+func newHolder(t *testing.T, idenPubOnChain idenpubonchain.IdenPubOnChainer,
+	idenPubOffChainWrite idenpuboffchain.IdenPubOffChainWriter,
+	idenPubOffChainRead idenpuboffchain.IdenPubOffChainReader) (*holder.Holder, db.Storage, *keystore.KeyStore) {
+	cfg := holder.ConfigDefault
+	storage := db.NewMemoryStorage()
+	ksStorage := keystore.MemStorage([]byte{})
+	keyStore, err := keystore.NewKeyStore(&ksStorage, keystore.LightKeyStoreParams)
+	require.Nil(t, err)
+	// kOp, err := keyStore.NewKey(pass)
+	var sk babyjub.PrivateKey
+	sk[0] = 0x22
+	kOp, err := keyStore.ImportKey(sk, pass)
+	require.Nil(t, err)
+	err = keyStore.UnlockKey(kOp, pass)
+	require.Nil(t, err)
+	_, err = holder.Create(cfg, kOp, []claims.Claimer{}, storage, keyStore)
+	require.Nil(t, err)
+	ho, err := holder.Load(storage, keyStore, idenPubOnChain, idenStateZkProofConf,
+		idenPubOffChainWrite, idenPubOffChainRead)
+	require.Nil(t, err)
+	return ho, storage, keyStore
+}
+
+func TestVerifyCredentialValidity(t *testing.T) {
+	// verifier := verifier.NewWithTimeNow(idenPubOnChain, func() time.Time {
+	// 	return time.Unix(blockTs, 0)
+	// })
+
+	ho, _, _ := newHolder(t, idenPubOnChain, nil, idenPubOffChain)
+
+	//
+	// {Ts: 1000, BlockN: 120} -> claim1 is added
+	//
+	blockTs, blockN = 1000, 120
+
+	// ISSUER: Publish state first time with claim1
+
+	indexBytes, valueBytes := [claims.IndexSubjectSlotLen]byte{}, [claims.ValueSlotLen]byte{}
+	indexBytes[0] = 0x42
+	valueBytes[0] = 0x43
+	claim1 := claims.NewClaimOtherIden(ho.ID(), indexBytes, valueBytes)
+
+	is, _, _ := newIssuer(t, idenPubOnChain, idenPubOffChain)
+	err := is.IssueClaim(claim1)
+	require.Nil(t, err)
+
+	// Publishing state for the first time
+	err = is.PublishState()
+	require.Nil(t, err)
+	idenPubOnChain.Sync()
+
+	blockTs += 20
+	blockN += 10
+
+	err = is.SyncIdenStatePublic()
+	require.Nil(t, err)
+
+	credExistClaim1, err := is.GenCredentialExistence(claim1)
+	require.Nil(t, err)
+
+	// HOLDER + VERIFIER
+
+	// credValidClaim1t1, err := ho.HolderGetCredentialValidity(credExistClaim1)
+	// require.Nil(t, err)
+
+	//
+	// {Ts: 2000, BlockN: 130} -> claim2 is added
+	//
+	blockTs, blockN = 2000, 130
+
+	// ISSUER: Publish state a second time with another claim2, claim3
+
+	indexBytes, valueBytes = [claims.IndexSubjectSlotLen]byte{}, [claims.ValueSlotLen]byte{}
+	indexBytes[0] = 0x48
+	valueBytes[0] = 0x49
+	claim2 := claims.NewClaimOtherIden(ho.ID(), indexBytes, valueBytes)
+
+	err = is.IssueClaim(claim2)
+	require.Nil(t, err)
+
+	// claim3 is a claim with expiration at T=3500
+
+	header := claims.ClaimHeader{
+		Type:       claims.NewClaimTypeNum(9999),
+		Subject:    claims.ClaimSubjectSelf,
+		Expiration: true,
+		Version:    false,
+	}
+	metadata := claims.NewMetadata(header)
+	metadata.Expiration = 3500
+	var entry merkletree.Entry
+	metadata.Marshal(&entry)
+	claim3 := claims.NewClaimGeneric(&entry)
+
+	err = is.IssueClaim(claim3)
+	require.Nil(t, err)
+
+	err = is.PublishState()
+	require.Nil(t, err)
+	idenPubOnChain.Sync()
+
+	blockTs += 20
+	blockN += 10
+
+	err = is.SyncIdenStatePublic()
+	require.Nil(t, err)
+
+	// credExistClaim2, err := is.GenCredentialExistence(claim2)
+	// require.Nil(t, err)
+
+	// HOLDER + VERIFIER
+
+	credValid, err := ho.HolderGetCredentialValidity(credExistClaim1)
+	assert.Nil(t, err)
+	assert.NotNil(t, credValid)
+
+	// DEBUG BEGIN
+
+	// credValidJSON, err := json.MarshalIndent(credValid, "", "  ")
+	// assert.Nil(t, err)
+	// fmt.Printf("%v\n", string(credValidJSON))
+
+	idOwnershipInputs, err := ho.GenIdOwnershipGenesisInputs(idOwnershipLevels)
+	assert.Nil(t, err)
+	credProofInputs, err := ho.HolderGetCredentialProofInputs(idOwnershipInputs,
+		credExistClaim1, issuerLevels)
+	assert.Nil(t, err)
+	assert.NotNil(t, credProofInputs)
+
+	credProofInputsString, err := InputToStrings(credProofInputs)
+	assert.Nil(t, err)
+	credProofInputsStringJSON, err := json.MarshalIndent(credProofInputsString, "", "  ")
+	assert.Nil(t, err)
+	fmt.Printf("const inputs1JSON = `\n%v\n", string(credProofInputsStringJSON))
+
+	/*
+			var claimMetadata claims.Metadata
+			claimMetadata.Unmarshal(credExistClaim1.Claim)
+			// NOTE: Once we add versions, this will require some changes that need to be thought properly!
+			revLeaf := claims.NewLeafRevocationsTree(claimMetadata.RevNonce, 0xffffffff).Entry()
+			revLeafHi, err := revLeaf.HIndex()
+			assert.Nil(t, err)
+			fmt.Printf(`"hi": "%v",
+		`, revLe afHi.BigInt())
+			revLeafHv, err := revLeaf.HValue()
+			assert.Nil(t, err)
+			fmt.Printf(`"hv": "%v",
+		`, revLe afHv.BigInt())
+			fmt.Printf(`"revNonce": "%v",
+		`, claimMetadata.RevNonce)
+	*/
+
+	// Add some random claims
+	for i := 0; i < 4; i++ {
+		indexBytes, valueBytes := [claims.IndexSlotLen]byte{}, [claims.ValueSlotLen]byte{}
+		indexBytes[0] = 0x10 + byte(i)
+		claim := claims.NewClaimBasic(indexBytes, valueBytes)
+		err = is.IssueClaim(claim)
+		require.Nil(t, err)
+	}
+
+	indexBytes, valueBytes = [claims.IndexSubjectSlotLen]byte{}, [claims.ValueSlotLen]byte{}
+	indexBytes[0] = 0x52
+	valueBytes[0] = 0x53
+	claim4 := claims.NewClaimOtherIden(ho.ID(), indexBytes, valueBytes)
+	err = is.IssueClaim(claim4)
+	require.Nil(t, err)
+
+	// TODO: Revoke claim1
+
+	// Publishing state for the first time
+	err = is.PublishState()
+	require.Nil(t, err)
+	idenPubOnChain.Sync()
+
+	blockTs += 20
+	blockN += 10
+
+	err = is.SyncIdenStatePublic()
+	require.Nil(t, err)
+
+	credExistClaim4, err := is.GenCredentialExistence(claim4)
+	require.Nil(t, err)
+
+	credProofInputs, err = ho.HolderGetCredentialProofInputs(idOwnershipInputs,
+		credExistClaim4, issuerLevels)
+	assert.Nil(t, err)
+	assert.NotNil(t, credProofInputs)
+
+	credProofInputsString, err = InputToStrings(credProofInputs)
+	assert.Nil(t, err)
+	credProofInputsStringJSON, err = json.MarshalIndent(credProofInputsString, "", "  ")
+	assert.Nil(t, err)
+	fmt.Printf("const inputs2JSON = `\n%v\n", string(credProofInputsStringJSON))
+}
+
+func InputToStrings(input interface{}) (interface{}, error) {
+	var inputMap map[string]interface{}
+	if err := mapstructure.Decode(input, &inputMap); err != nil {
+		return nil, err
+	}
+	inputStrings := make(map[string]interface{})
+	for key, value := range inputMap {
+		switch v := value.(type) {
+		case *big.Int:
+			inputStrings[key] = v.String()
+		case []*big.Int:
+			vs := make([]string, len(v))
+			for i, v := range v {
+				vs[i] = v.String()
+			}
+			inputStrings[key] = vs
+		default:
+			panic(fmt.Sprintf("Type: %T", value))
+		}
+	}
+	return inputStrings, nil
+}
+
+var _vk *zktypes.Vk
+
+func TestMain(m *testing.M) {
+	log.SetLevel(log.DebugLevel)
+	downloadPath := "/tmp/iden3/idenstatezk"
+	err := issuer.GetIdenStateZKFiles("http://161.35.72.58:9000/circuit-idstate/", downloadPath)
+	if err != nil {
+		panic(err)
+	}
+	vkJSON, err := ioutil.ReadFile(path.Join(downloadPath, "verification_key.json"))
+	if err != nil {
+		panic(err)
+	}
+	vk, err := parsers.ParseVk(vkJSON)
+	if err != nil {
+		panic(err)
+	}
+	_vk = vk
+	idenPubOnChain = idenpubonchainlocal.New(
+		func() time.Time {
+			return time.Unix(blockTs, 0)
+		},
+		func() uint64 {
+			return blockN
+		},
+		vk,
+	)
+	idenPubOffChain = idenpuboffchanlocal.NewIdenPubOffChain("http://foo.bar")
+	idenStateZkProofConf = &issuer.IdenStateZkProofConf{
+		Levels:              16,
+		PathWitnessCalcWASM: path.Join(downloadPath, "circuit.wasm"),
+		PathProvingKey:      path.Join(downloadPath, "proving_key.json"),
+		PathVerifyingKey:    path.Join(downloadPath, "verification_key.json"),
+		CacheProvingKey:     true,
+	}
+	os.Exit(m.Run())
+}

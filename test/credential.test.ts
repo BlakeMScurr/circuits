@@ -6,62 +6,139 @@ const assert = chai.assert;
 
 export {};
 
+const inputs1JSON = `
+{
+  "claim": [
+    "5229058725960037140435686129664",
+    "289859737856552242459908064039047479872297983795219456858471895981296582656",
+    "0",
+    "0",
+    "287762808833",
+    "0",
+    "0",
+    "0"
+  ],
+  "hoClaimKOpClaimsTreeRoot": "7946780746749119737347824328380716888185847167350706156852781411110671384281",
+  "hoClaimKOpMtp": [
+    "0",
+    "0",
+    "0",
+    "0",
+    "0"
+  ],
+  "hoKOpSk": "4311558182412267067793656453445268895647366823536826824741896295264034954945",
+  "isIdenState": "1021437601985711853277206337009096112389413721973400575259638312920789909982",
+  "isProofExistClaimsTreeRoot": "18005760196938005485096907333031681349871966566528477748190956255519313873091",
+  "isProofExistMtp": [
+    "0",
+    "1057889796422815837190757694830636547632657717350193461241702298517508497145",
+    "0",
+    "0",
+    "0",
+    "0",
+    "0"
+  ],
+  "isProofRootMtp": [
+    "14096892121867044271066746160850369274837319930434403943474282036840376392933",
+    "0",
+    "4384706921277752443651310638204899155127465281135248749515595423118486077645",
+    "0",
+    "0",
+    "0",
+    "0"
+  ],
+  "isProofValidClaimsTreeRoot": "18073587119444955451916631593935830518980360004069585959594121569771553334981",
+  "isProofValidNotRevMtp": [
+    "0",
+    "0",
+    "0",
+    "0",
+    "0",
+    "0",
+    "0"
+  ],
+  "isProofValidNotRevMtpAux": "1",
+  "isProofValidNotRevMtpAuxHi": "0",
+  "isProofValidNotRevMtpAuxHv": "0",
+  "isProofValidRevTreeRoot": "0",
+  "isProofValidRootsTreeRoot": "1128847817586708677431649837400857063657064756677335539880173639793993768078"
+}
+`;
+
+const inputs2JSON = `
+{
+  "claim": [
+    "6496709326188266541932389335040",
+    "289859737856552242459908064039047479872297983795219456858471895981296582656",
+    "0",
+    "0",
+    "356482285576",
+    "0",
+    "0",
+    "0"
+  ],
+  "hoClaimKOpClaimsTreeRoot": "7946780746749119737347824328380716888185847167350706156852781411110671384281",
+  "hoClaimKOpMtp": [
+    "0",
+    "0",
+    "0",
+    "0",
+    "0"
+  ],
+  "hoKOpSk": "4311558182412267067793656453445268895647366823536826824741896295264034954945",
+  "isIdenState": "10933968122166863498027157730758380374323906184641787004991157253178649964291",
+  "isProofExistClaimsTreeRoot": "8146239264643066927734893036797999828052465333850803483880500361951925553145",
+  "isProofExistMtp": [
+    "10989899498353957344915933254222581822961752181784633154288424575491384284482",
+    "0",
+    "0",
+    "0",
+    "21237486738201369817512451245779744114676258390867073337704691045883007838134",
+    "0",
+    "5319800125082380110121566820784243844669558977803760081977935783797157515410",
+    "0"
+  ],
+  "isProofRootMtp": [
+    "14096892121867044271066746160850369274837319930434403943474282036840376392933",
+    "0",
+    "4384706921277752443651310638204899155127465281135248749515595423118486077645",
+    "0",
+    "4703033609716383825106718480467902804296403057823663119836688797715299221383",
+    "0",
+    "0"
+  ],
+  "isProofValidClaimsTreeRoot": "8146239264643066927734893036797999828052465333850803483880500361951925553145",
+  "isProofValidNotRevMtp": [
+    "0",
+    "0",
+    "0",
+    "0",
+    "0",
+    "0",
+    "0"
+  ],
+  "isProofValidNotRevMtpAux": "0",
+  "isProofValidNotRevMtpAuxHi": "0",
+  "isProofValidNotRevMtpAuxHv": "0",
+  "isProofValidRevTreeRoot": "0",
+  "isProofValidRootsTreeRoot": "7298408834084201315432234875054176816794190446351226405158289395172667044662"
+}
+`;
+
 describe("credential test", function () {
     this.timeout(200000);
 
-
-    it("Test Credential simple tree", async () => {
+    it("Test Credential", async () => {
         const circuit = await tester(
-            path.join(__dirname, "circuits", "credential-simpletree.circom"),
+            path.join(__dirname, "circuits", "credential.circom"),
             {reduceConstraints: false}
         );
 
         // input data generated with circuits/test/testvectorsgen/credential_test.go, which uses go-iden3-core
-        const witness = await circuit.calculateWitness({
-            issuerRoot: "20345323600276915334840455511884465229803859322011240311319051873466365756230",
-            siblings: ["0", "0", "0", "0"],
-            id: "418819843184716391854950027336187830212226236089582432322628806588929540096",
-            oUserPrivateKey: "6190793965647866647574058687473278714480561351424348391693421151024369116465",
-            oSiblings: ["0", "0", "0", "0"],
-            oClaimsTreeRoot: "19759495200350784025545259483378281480848861021788190330947710448581962628389"
-        });
-        await circuit.checkConstraints(witness);
+        const witness1 = await circuit.calculateWitness(JSON.parse(inputs1JSON));
+        await circuit.checkConstraints(witness1);
+
+        // const witness2 = await circuit.calculateWitness(JSON.parse(inputs2JSON));
+        // await circuit.checkConstraints(witness2);
     });
-
-    it("Test Credential crowded tree", async () => {
-        const circuit = await tester(
-            path.join(__dirname, "circuits", "credential-crowdedtree.circom"),
-            {reduceConstraints: false}
-        );
-
-        // input data generated with circuits/testvectorsgen/credential_test.go, which uses go-iden3-core
-        const witness = await circuit.calculateWitness({
-            issuerRoot: "15797803252728443209616381990433131096640537982070147713338175380570298454976",
-            siblings: ["0","0","13916889557215241228015141713364344747865487575761466027104065750914992601361","0","1690755171476910509239176159009614851908078886245570023216111461801296009507","0","0","0","0","0","0"],
-            id: "418819843184716391854950027336187830212226236089582432322628806588929540096",
-            oUserPrivateKey: "6190793965647866647574058687473278714480561351424348391693421151024369116465",
-            oSiblings: ["0", "0", "0", "0"],
-            oClaimsTreeRoot: "19759495200350784025545259483378281480848861021788190330947710448581962628389",
-        });
-        await circuit.checkConstraints(witness);
-    });
-
-    it("Test Credential crowded tree 2", async () => {
-        const circuit = await tester(
-            path.join(__dirname, "circuits", "credential-crowdedtree.circom"),
-            {reduceConstraints: false}
-        );
-
-        // input data generated with circuits/testvectorsgen/credential_test.go, which uses go-iden3-core
-        const witness = await circuit.calculateWitness({
-            issuerRoot: "2129482215913584500569008537045904456845658748821359635806813662925761769886",
-            siblings: ["604188087829632076306376825067769041242138923320155729340326180965998292587","17718355220464227213288151505646534046014097853894322131890418720614087460956","2252100485810221620724624245977333650139249675725008098218121781589002804416","0","1690755171476910509239176159009614851908078886245570023216111461801296009507","0","0","0","0","0","0"],
-            id: "418819843184716391854950027336187830212226236089582432322628806588929540096",
-            oUserPrivateKey: "6190793965647866647574058687473278714480561351424348391693421151024369116465",
-            oSiblings: ["0", "0", "0", "0"],
-            oClaimsTreeRoot: "19759495200350784025545259483378281480848861021788190330947710448581962628389",
-        });
-        await circuit.checkConstraints(witness);
-    });
-
 });
